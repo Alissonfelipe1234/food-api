@@ -1,42 +1,13 @@
-
-import { getModelToken } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Product } from './products.schema';
-import * as moment from 'moment';
-import axios from 'axios';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductService } from './products.service';
-
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+import { getModelToken } from '@nestjs/mongoose';
+import { Product } from './products.schema';
+import { Model } from 'mongoose';
+import { NotFoundException } from '@nestjs/common';
 
 describe('ProductService', () => {
   let service: ProductService;
-  let model: Model<Product>;
-
-  const mockProduct = {
-    code: '1234567890123',
-    url: 'https://example.com',
-    product_name: 'Test Product',
-    created_t: moment().unix(),
-    last_modified_t: moment().unix(),
-    imported_t: new Date(),
-    status: 'draft',
-  };
-
-  const productArray = [mockProduct];
-
-  const mockProductModel = {
-    new: jest.fn().mockResolvedValue(mockProduct),
-    constructor: jest.fn().mockResolvedValue(mockProduct),
-    find: jest.fn().mockReturnValue({
-      exec: jest.fn().mockResolvedValue(productArray),
-    }),
-    findOne: jest.fn().mockReturnValue({
-      exec: jest.fn().mockResolvedValue(mockProduct),
-    }),
-    updateOne: jest.fn().mockResolvedValue({}),
-  };
+  let productModel: Model<Product>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -44,92 +15,82 @@ describe('ProductService', () => {
         ProductService,
         {
           provide: getModelToken(Product.name),
-          useValue: mockProductModel,
+          useValue: {
+            find: jest.fn(),
+            findOne: jest.fn(),
+            findOneAndUpdate: jest.fn(),
+            exec: jest.fn(),
+          },
         },
       ],
     }).compile();
 
     service = module.get<ProductService>(ProductService);
-    model = module.get<Model<Product>>(getModelToken(Product.name));
+    productModel = module.get<Model<Product>>(getModelToken(Product.name));
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  it('should return all products with pagination', async () => {
+    const result = [{ code: '123', product_name: 'Test Product' }];
+    jest.spyOn(productModel, 'find').mockReturnValue({
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(result),
+    } as any);
+
+    expect(await service.findAll({ page: 1, limit: 10 })).toBe(result);
   });
 
-  describe('getProducts', () => {
-    it('should return an array of products', async () => {
-      const products = await service.getProducts();
-      expect(products).toEqual(productArray);
-    });
+  it('should return one product by code', async () => {
+    const result = { code: '123', product_name: 'Test Product' };
+    jest.spyOn(productModel, 'findOne').mockReturnValue({
+      exec: jest.fn().mockResolvedValue(result),
+    } as any);
+
+    expect(await service.findOne('123')).toBe(result);
   });
 
-  describe('getProductByCode', () => {
-    it('should return a single product by code', async () => {
-      const product = await service.getProductByCode('1234567890123');
-      expect(product).toEqual(mockProduct);
-    });
+  it('should soft delete a product by setting status to trash', async () => {
+    const code = '123';
+    const result = { code, status: 'trash' } as Product;
+
+    jest.spyOn(productModel, 'findOneAndUpdate').mockReturnValue({
+      exec: jest.fn().mockResolvedValue(result),
+    } as any);
+
+    expect(await service.softDelete(code)).toBe(result);
   });
 
-  describe('updateProduct', () => {
-    it('should update a product by code', async () => {
-      const updateData = { product_name: 'Updated Product' };
-      await service.updateProduct('1234567890123', updateData);
-      expect(mockProductModel.updateOne).toHaveBeenCalledWith(
-        { code: '1234567890123' },
-        { $set: updateData },
-      );
-    });
+  it('should throw NotFoundException if product to soft delete is not found', async () => {
+    const code = '123';
+
+    jest.spyOn(productModel, 'findOneAndUpdate').mockReturnValue({
+      exec: jest.fn().mockResolvedValue(null),
+    } as any);
+
+    await expect(service.softDelete(code)).rejects.toThrow(NotFoundException);
   });
 
-  describe('deleteProduct', () => {
-    it('should mark a product as trash by code', async () => {
-      await service.deleteProduct('1234567890123');
-      expect(mockProductModel.updateOne).toHaveBeenCalledWith(
-        { code: '1234567890123' },
-        { $set: { status: 'trash' } },
-      );
-    });
+  // Teste para o update
+  it('should update a product', async () => {
+    const code = '123';
+    const updateData = { product_name: 'Updated Product' };
+    const result = { code, ...updateData } as Product;
+
+    jest.spyOn(productModel, 'findOneAndUpdate').mockReturnValue({
+      exec: jest.fn().mockResolvedValue(result),
+    } as any);
+
+    expect(await service.update(code, updateData)).toBe(result);
   });
 
-  describe('importProducts', () => {
-    it('should fetch and save products from files', async () => {
-      const getFileListSpy = jest
-        .spyOn(service as any, 'getFileList')
-        .mockResolvedValue(['file1.json', 'file2.json']);
-      const fetchProductsFromFileSpy = jest
-        .spyOn(service as any, 'fetchProductsFromFile')
-        .mockResolvedValue(productArray);
-      const saveProductsSpy = jest
-        .spyOn(service as any, 'saveProducts')
-        .mockResolvedValue(undefined);
+  it('should throw NotFoundException if product to update is not found', async () => {
+    const code = '123';
+    const updateData = { product_name: 'Updated Product' };
 
-      await service.importProducts();
+    jest.spyOn(productModel, 'findOneAndUpdate').mockReturnValue({
+      exec: jest.fn().mockResolvedValue(null),
+    } as any);
 
-      expect(getFileListSpy).toHaveBeenCalled();
-      expect(fetchProductsFromFileSpy).toHaveBeenCalledWith('file1.json');
-      expect(fetchProductsFromFileSpy).toHaveBeenCalledWith('file2.json');
-      expect(saveProductsSpy).toHaveBeenCalledWith(productArray);
-    });
-  });
-
-  describe('fetchProductsFromFile', () => {
-    it('should fetch products from a specific file', async () => {
-      const mockResponse = { data: productArray };
-      axios.get = jest.fn().mockResolvedValue({ mockResponse });
-
-      const products = await (service as any).fetchProductsFromFile('file1.json');
-      expect(products).toEqual(productArray);
-    });
-  });
-
-  describe('getFileList', () => {
-    it('should return a list of file names', async () => {
-      const mockResponse = { data: 'file1.json\nfile2.json\n' };
-      axios.get = jest.fn().mockResolvedValue({ mockResponse });
-
-      const files = await (service as any).getFileList();
-      expect(files).toEqual(['file1.json', 'file2.json']);
-    });
+    await expect(service.update(code, updateData)).rejects.toThrow(NotFoundException);
   });
 });

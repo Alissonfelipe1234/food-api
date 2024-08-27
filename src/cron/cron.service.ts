@@ -19,7 +19,7 @@ export class CronService {
     @InjectModel(Product.name) private readonly productModel: Model<Product>,
   ) {}
 
-  @Cron('12 2 * * *') // Executa diariamente à meia-noite
+  @Cron('0 0 * * *') // Executa diariamente à meia-noite
   async handleCron() {
     try {
       const indexUrl = 'https://challenges.coode.sh/food/data/json/index.txt';

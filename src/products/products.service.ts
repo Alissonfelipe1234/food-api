@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import axios from 'axios';
-import * as moment from 'moment';
 import { Product } from './products.schema';
 
 @Injectable()
@@ -44,7 +43,7 @@ export class ProductService {
     const product = new this.productModel({
       ...productData,
       created_datetime: new Date(),
-      status: 'created',
+      status: 'published',
     });
     return product;
   }
@@ -72,6 +71,6 @@ export class ProductService {
   }
 
   async deleteProduct(code: string) {
-    return this.productModel.updateOne({ code }, { $set: { status: 'deleted' } }).exec();
+    return this.productModel.updateOne({ code }, { $set: { status: 'trash' } }).exec();
   }
 }

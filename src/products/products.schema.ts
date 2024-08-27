@@ -189,8 +189,10 @@ export class Product extends Document {
   @Prop()
   nutrition_score_uk_100g: number;
 
-  //campo para softdelete
-  @Prop({ required: true, enum: ['created', 'deleted', 'published'] })
+  @Prop({ type: Date, default: Date.now })
+  imported_t: Date;
+
+  @Prop({ required: true, enum: ['draft', 'trash', 'published'], default: 'draft' })
   status: string;
 }
 
